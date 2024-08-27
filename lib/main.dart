@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:router_os_client/router_os_client.dart';
 
@@ -40,10 +41,10 @@ class RouterOSWidgetState extends State<RouterOSWidget> {
   @override
   void initState() {
     super.initState();
-    addressController.text = '103.215.210.42';  // Default value
-    userController.text = 'raha';               // Default value
-    passwordController.text = 'raha';           // Default value
-    portController.text = '887';                // Default value
+    addressController.text = '';  // Default value
+    userController.text = '';               // Default value
+    passwordController.text = '';           // Default value
+    portController.text = '';                // Default value
   }
 
   Future<void> _connectToRouter() async {
@@ -120,7 +121,9 @@ class RouterOSWidgetState extends State<RouterOSWidget> {
         });
       }
     } catch (e) {
-      print('Error while streaming data: $e');
+      if (kDebugMode) {
+        print('Error while streaming data: $e');
+      }
       setState(() {
         commandOutput = 'Error while streaming data: $e';
       });
@@ -183,7 +186,13 @@ class RouterOSWidgetState extends State<RouterOSWidget> {
             const SizedBox(height: 20),
             ElevatedButton(
               onPressed: () async {
-                await _connectToRouter();
+                if(addressController.text.isNotEmpty && userController.text.isNotEmpty && passwordController.text.isNotEmpty && portController.text.isNotEmpty) {
+                  await _connectToRouter();
+                }else{
+                  setState(() {
+                    status = 'Please fill all fields';
+                  });
+                }
               },
               child: const Text('Connect'),
             ),

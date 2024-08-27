@@ -325,16 +325,16 @@ class RouterOSClient {
   }
 
   // Checks if the socket connection is still alive.
-  bool isAlive() {
+  Object isAlive() {
     if (_socket == null) {
       _log('Socket is not open.');
       return false;
     }
 
     try {
-      final result = talk(['/system/identity/print']).timeout(Duration(seconds: 2)); // Send a simple command
+      final result = talk(['/system/identity/print']).timeout(const Duration(seconds: 2)); // Send a simple command
       _log('Result: $result');
-      return result != null;
+      return result;
     } on TimeoutException {
       _log('Socket read timeout.');
       close();
