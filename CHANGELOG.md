@@ -28,3 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Reformated `router_os_client` file.
 
+
+## [1.0.0+3] - 2024-08-27
+### Removed
+- Removed cupertino_icons from dependencies.
+
