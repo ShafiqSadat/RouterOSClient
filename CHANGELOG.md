@@ -24,3 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic API connection functionality for RouterOS devices.
 - Added documentation and examples for usage.
 
+## [1.0.0+2] - 2024-08-27
+### Changed
+- Reformated `router_os_client` file.
+

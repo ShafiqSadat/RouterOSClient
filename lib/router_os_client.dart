@@ -13,13 +13,15 @@ class RouterOSClient {
   bool useSsl; // Whether to use SSL for the connection
   int port; // The port to connect to (8728 for non-SSL, 8729 for SSL)
   bool verbose; // If true, additional debug information will be printed
-  SecurityContext? context; // SSL context for secure connections (if useSsl is true)
+  SecurityContext?
+      context; // SSL context for secure connections (if useSsl is true)
   Duration? timeout; // Optional timeout for socket operations
 
   // Internal socket references
   Socket? _socket; // Standard TCP socket
   SecureSocket? _secureSocket; // SSL-enabled TCP socket
-  late Stream<List<int>> _socketStream; // Stream for handling incoming data from the socket
+  late Stream<List<int>>
+      _socketStream; // Stream for handling incoming data from the socket
 
   // Constructor for the RouterOSClient class, initializing the properties.
   RouterOSClient({
@@ -31,7 +33,8 @@ class RouterOSClient {
     this.verbose = false, // Default is not verbose
     this.context, // SSL context is optional
     this.timeout, // Timeout is optional
-  }) : port = port ?? (useSsl ? 8729 : 8728); // Set port based on whether SSL is used
+  }) : port = port ??
+            (useSsl ? 8729 : 8728); // Set port based on whether SSL is used
 
   // Logs a message if verbose is true.
   void _log(String message) {
@@ -45,13 +48,15 @@ class RouterOSClient {
     try {
       if (useSsl) {
         // Connect using SSL if useSsl is true
-        _secureSocket = await SecureSocket.connect(address, port, context: context);
+        _secureSocket =
+            await SecureSocket.connect(address, port, context: context);
         _socket = _secureSocket;
       } else {
         // Connect using a standard TCP socket
         _socket = await Socket.connect(address, port);
       }
-      _socket?.setOption(SocketOption.tcpNoDelay, true); // Disable Nagle's algorithm for low latency
+      _socket?.setOption(SocketOption.tcpNoDelay,
+          true); // Disable Nagle's algorithm for low latency
       _log('RouterOSClient socket connection opened.');
 
       // Convert the socket stream to a broadcast stream to allow multiple listeners.
@@ -67,8 +72,13 @@ class RouterOSClient {
   Future<bool> login() async {
     try {
       await _openSocket(); // Open the socket connection
-      var sentence = ['/login', '=name=$user', '=password=$password']; // Prepare login command
-      var reply = await _communicate(sentence); // Send command and wait for reply
+      var sentence = [
+        '/login',
+        '=name=$user',
+        '=password=$password'
+      ]; // Prepare login command
+      var reply =
+          await _communicate(sentence); // Send command and wait for reply
       _checkLoginReply(reply); // Check if login was successful
       return true;
     } catch (e) {
@@ -81,7 +91,8 @@ class RouterOSClient {
   Future<List<List<String>>> _communicate(List<String> sentenceToSend) async {
     var socket = _socket;
     if (socket == null) {
-      throw StateError('Socket is not open.'); // Ensure the socket is open before sending data
+      throw StateError(
+          'Socket is not open.'); // Ensure the socket is open before sending data
     }
 
     for (var word in sentenceToSend) {
@@ -91,7 +102,8 @@ class RouterOSClient {
       _log('>>> $word');
     }
 
-    socket.add([0]); // Send a zero-length word to indicate the end of the sentence
+    socket.add(
+        [0]); // Send a zero-length word to indicate the end of the sentence
 
     return await _receiveData(); // Wait for the reply from the RouterOS device
   }
@@ -100,17 +112,22 @@ class RouterOSClient {
   Future<List<List<String>>> _receiveData() async {
     var buffer = <int>[]; // Buffer to accumulate received data
     var receivedData = <List<String>>[]; // List to store received sentences
-    var completer = Completer<List<List<String>>>(); // Completer to signal when data is fully received
+    var completer = Completer<
+        List<
+            List<String>>>(); // Completer to signal when data is fully received
 
     // Listen to the incoming data stream
     _socketStream.listen((event) {
       buffer.addAll(event); // Add the incoming data to the buffer
       while (buffer.isNotEmpty) {
-        var sentence = _readSentenceFromBuffer(buffer); // Read a sentence from the buffer
+        var sentence =
+            _readSentenceFromBuffer(buffer); // Read a sentence from the buffer
         receivedData.add(sentence); // Add the sentence to the received data
-        if (sentence.contains('!done')) { // Check if the sentence indicates the end of the command
+        if (sentence.contains('!done')) {
+          // Check if the sentence indicates the end of the command
           if (!completer.isCompleted) {
-            completer.complete(receivedData); // Complete the completer with the received data
+            completer.complete(
+                receivedData); // Complete the completer with the received data
           }
           break;
         }
@@ -125,14 +142,17 @@ class RouterOSClient {
     var sentence = <String>[]; // List to store words in the sentence
 
     while (buffer.isNotEmpty) {
-      var length = _readLengthFromBuffer(buffer); // Read the length of the next word
+      var length =
+          _readLengthFromBuffer(buffer); // Read the length of the next word
       if (length == 0) {
         break; // If length is zero, end of the sentence
       }
 
-      var word = utf8.decode(buffer.sublist(0, length)); // Decode the word from the buffer
+      var word = utf8
+          .decode(buffer.sublist(0, length)); // Decode the word from the buffer
       sentence.add(word); // Add the word to the sentence
-      buffer.removeRange(0, length); // Remove the processed word from the buffer
+      buffer.removeRange(
+          0, length); // Remove the processed word from the buffer
     }
 
     return sentence;
@@ -140,7 +160,8 @@ class RouterOSClient {
 
   // Reads the length of the next word in the buffer.
   int _readLengthFromBuffer(List<int> buffer) {
-    var firstByte = buffer.removeAt(0); // Get the first byte, which determines the length format
+    var firstByte = buffer
+        .removeAt(0); // Get the first byte, which determines the length format
     int length;
 
     if (firstByte < 0x80) {
@@ -151,7 +172,8 @@ class RouterOSClient {
     } else if (firstByte < 0xE0) {
       var bytes = buffer.sublist(0, 2);
       buffer.removeRange(0, 2);
-      length = ((firstByte << 16) | (bytes[0] << 8) | bytes[1]) - 0xC00000; // Three-byte length
+      length = ((firstByte << 16) | (bytes[0] << 8) | bytes[1]) -
+          0xC00000; // Three-byte length
     } else if (firstByte < 0xF0) {
       var bytes = buffer.sublist(0, 3);
       buffer.removeRange(0, 3);
@@ -161,9 +183,13 @@ class RouterOSClient {
     } else if (firstByte == 0xF0) {
       var bytes = buffer.sublist(0, 4);
       buffer.removeRange(0, 4);
-      length = (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]; // Full 32-bit length
+      length = (bytes[0] << 24) |
+          (bytes[1] << 16) |
+          (bytes[2] << 8) |
+          bytes[3]; // Full 32-bit length
     } else {
-      throw WordTooLong('Received word is too long.'); // Handle case where word is too long
+      throw WordTooLong(
+          'Received word is too long.'); // Handle case where word is too long
     }
 
     return length; // Return the calculated length
@@ -186,7 +212,8 @@ class RouterOSClient {
       socket.add([0xF0]);
       socket.add(length.toBytes(4)); // Full 32-bit length
     } else {
-      throw WordTooLong('Word is too long. Max length is 4294967295.'); // Handle words that are too long
+      throw WordTooLong(
+          'Word is too long. Max length is 4294967295.'); // Handle words that are too long
     }
   }
 
@@ -203,7 +230,8 @@ class RouterOSClient {
         reply[0][1].startsWith('=ret=')) {
       _log('Using legacy login process.');
     } else {
-      throw LoginError('Unexpected login reply: $reply'); // Handle unexpected replies
+      throw LoginError(
+          'Unexpected login reply: $reply'); // Handle unexpected replies
     }
   }
 
@@ -222,13 +250,15 @@ class RouterOSClient {
       }
       return reply.expand((element) => element).toList();
     } else {
-      throw ArgumentError('Invalid message type for talk: $message'); // Handle invalid input types
+      throw ArgumentError(
+          'Invalid message type for talk: $message'); // Handle invalid input types
     }
   }
 
   // Streams data from the RouterOS device, useful for long-running commands.
   Stream<Map<String, String>> streamData(dynamic command) async* {
-    var sentenceToSend = _parseCommand(command); // Parse the command into a sentence
+    var sentenceToSend =
+        _parseCommand(command); // Parse the command into a sentence
 
     var socket = _socket;
     if (socket == null) {
@@ -243,13 +273,16 @@ class RouterOSClient {
 
     socket.add([0]); // Send a zero-length word to end the sentence
 
-    await for (var event in _socketStream) { // Listen for incoming data
+    await for (var event in _socketStream) {
+      // Listen for incoming data
       var buffer = <int>[];
       buffer.addAll(event);
       while (buffer.isNotEmpty) {
-        var sentence = _readSentenceFromBuffer(buffer); // Read the sentence from the buffer
+        var sentence = _readSentenceFromBuffer(
+            buffer); // Read the sentence from the buffer
         if (sentence.isNotEmpty) {
-          var parsedData = _parseSentence(sentence); // Parse the sentence into a map
+          var parsedData =
+              _parseSentence(sentence); // Parse the sentence into a map
           yield parsedData; // Yield each parsed sentence
         }
 
@@ -291,11 +324,13 @@ class RouterOSClient {
 
   // Sends a command and returns the parsed response.
   Future<List<Map<String, String>>> _send(List<String> sentence) async {
-    var reply = await _communicate(sentence); // Send the command and wait for the reply
+    var reply =
+        await _communicate(sentence); // Send the command and wait for the reply
 
     if (reply.isNotEmpty && reply[0].isNotEmpty && reply[0][0] == '!trap') {
       _log('Command: $sentence\nReturned an error: $reply');
-      throw RouterOSTrapError("Command: $sentence\nReturned an error: $reply"); // Handle errors in the response
+      throw RouterOSTrapError(
+          "Command: $sentence\nReturned an error: $reply"); // Handle errors in the response
     }
 
     return _parseReply(reply); // Parse and return the reply
@@ -332,7 +367,8 @@ class RouterOSClient {
     }
 
     try {
-      final result = talk(['/system/identity/print']).timeout(const Duration(seconds: 2)); // Send a simple command
+      final result = talk(['/system/identity/print'])
+          .timeout(const Duration(seconds: 2)); // Send a simple command
       _log('Result: $result');
       return result;
     } on TimeoutException {
