@@ -19,7 +19,7 @@ Add the following to your `pubspec.yaml` file:
 dependencies:
   router_os_client:
     git:
-      url: https://github.com/yourusername/router_os_client.git
+      url: https://github.com/ShafiqSadat/RouterOSClient.git
 ```
 
 Then run:
