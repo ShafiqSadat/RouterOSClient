@@ -1,32 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 
-class LoginError implements Exception {
-  final String message;
-
-  LoginError(this.message);
-}
-
-class WordTooLong implements Exception {
-  final String message;
-
-  WordTooLong(this.message);
-}
-
-class CreateSocketError implements Exception {
-  final String message;
-
-  CreateSocketError(this.message);
-}
-
-class RouterOSTrapError implements Exception {
-  final String message;
-
-  RouterOSTrapError(this.message);
-}
-
-class Api {
+class RouterOSClient {
   final String address;
   String user;
   String password;
@@ -38,9 +15,9 @@ class Api {
 
   Socket? _socket;
   SecureSocket? _secureSocket;
-  late Stream<List<int>> _socketStream; // Add a stream field
+  late Stream<List<int>> _socketStream;
 
-  Api({
+  RouterOSClient({
     required this.address,
     this.user = 'admin',
     this.password = '',
@@ -51,13 +28,13 @@ class Api {
     this.timeout,
   }) : port = port ?? (useSsl ? 8729 : 8728);
 
-  void log(String message) {
+  void _log(String message) {
     if (verbose) {
-      print(message);
+      debugPrint(message);
     }
   }
 
-  Future<void> openSocket() async {
+  Future<void> _openSocket() async {
     try {
       if (useSsl) {
         _secureSocket = await SecureSocket.connect(address, port, context: context);
@@ -66,30 +43,29 @@ class Api {
         _socket = await Socket.connect(address, port);
       }
       _socket?.setOption(SocketOption.tcpNoDelay, true);
-      log('API socket connection opened.');
+      _log('RouterOSClient socket connection opened.');
 
-      // Convert the socket stream to a broadcast stream
       _socketStream = _socket!.asBroadcastStream();
     } on SocketException catch (e) {
       throw CreateSocketError(
-          'Error: API failed to connect to socket. Host: $address, port: $port. Error: ${e.message}');
+          'Failed to connect to socket. Host: $address, port: $port. Error: ${e.message}');
     }
   }
 
   Future<bool> login() async {
     try {
-      await openSocket();
+      await _openSocket();
       var sentence = ['/login', '=name=$user', '=password=$password'];
-      var reply = await communicate(sentence);
-      _checkReply(reply);
-      return true; // Login successful
+      var reply = await _communicate(sentence);
+      _checkLoginReply(reply);
+      return true;
     } catch (e) {
-      log('Login failed: $e');
-      return false; // Login failed
+      _log('Login failed: $e');
+      return false;
     }
   }
 
-  Future<List<List<String>>> communicate(List<String> sentenceToSend) async {
+  Future<List<List<String>>> _communicate(List<String> sentenceToSend) async {
     var socket = _socket;
     if (socket == null) {
       throw StateError('Socket is not open.');
@@ -98,37 +74,33 @@ class Api {
     for (var word in sentenceToSend) {
       _sendLength(socket, word.length);
       socket.add(utf8.encode(word));
-      log('>>> $word');
+      _log('>>> $word');
     }
 
-    socket.add([0]); // Send zero length word to mark end of the sentence
+    socket.add([0]);
 
-    var receivedData = await _receiveData();
-    return receivedData;
+    return await _receiveData();
   }
-
 
   Future<List<List<String>>> _receiveData() async {
     var buffer = <int>[];
     var receivedData = <List<String>>[];
     var completer = Completer<List<List<String>>>();
 
-    // Listen to the broadcast stream
     _socketStream.listen((event) {
       buffer.addAll(event);
       while (buffer.isNotEmpty) {
         var sentence = _readSentenceFromBuffer(buffer);
         receivedData.add(sentence);
         if (sentence.contains('!done')) {
-          // log('Received: $receivedData');
           if (!completer.isCompleted) {
             completer.complete(receivedData);
-            // log('SHAFIQ: $receivedData');
           }
           break;
         }
       }
     });
+
     return completer.future;
   }
 
@@ -143,29 +115,11 @@ class Api {
 
       var word = utf8.decode(buffer.sublist(0, length));
       sentence.add(word);
-      buffer.removeRange(0, length); // Remove the processed word from the buffer
+      buffer.removeRange(0, length);
     }
 
     return sentence;
   }
-
-  // List<String> _readSentenceFromBuffer(List<int> buffer) {
-  //   var sentence = <String>[];
-  //
-  //   while (buffer.isNotEmpty) {
-  //     var length = _readLengthFromBuffer(buffer);
-  //     if (length == 0) {
-  //       break;
-  //     }
-  //
-  //     var word = utf8.decode(buffer.sublist(0, length));
-  //     sentence.add(word);
-  //     buffer.removeRange(
-  //         0, length); // Remove the processed word from the buffer
-  //   }
-  //
-  //   return sentence;
-  // }
 
   int _readLengthFromBuffer(List<int> buffer) {
     var firstByte = buffer.removeAt(0);
@@ -213,56 +167,60 @@ class Api {
       socket.add([0xF0]);
       socket.add(length.toBytes(4));
     } else {
-      throw WordTooLong('Word is too long. Max length of word is 4294967295.');
+      throw WordTooLong('Word is too long. Max length is 4294967295.');
     }
   }
 
-  void _checkReply(List<List<String>> reply) {
+  void _checkLoginReply(List<List<String>> reply) {
     if (reply.isNotEmpty && reply[0].length == 1 && reply[0][0] == '!done') {
-      log('Logged in successfully!');
+      _log('Login successful!');
     } else if (reply.isNotEmpty &&
         reply[0].length == 2 &&
         reply[0][0] == '!trap') {
-      throw LoginError('Error in login process: ${reply[0][1]}');
+      throw LoginError('Login error: ${reply[0][1]}');
     } else if (reply.isNotEmpty &&
         reply[0].length == 2 &&
         reply[0][1].startsWith('=ret=')) {
-      log('Using old login process.');
+      _log('Using legacy login process.');
     } else {
-      throw LoginError('Unexpected reply to login: $reply');
+      throw LoginError('Unexpected login reply: $reply');
     }
   }
 
   Future<List<Map<String, String>>> talk(dynamic message) async {
-    if (message is String || message is List<String>) {
-      return send(message);
+    if (message is String) {
+      message = _parseCommand(message);
+    }
+
+    if (message is List<String>) {
+      return _send(message);
     } else if (message is List<dynamic>) {
       var reply = <List<Map<String, String>>>[];
       for (var sentence in message) {
-        reply.add(await send(sentence));
+        reply.add(await _send(sentence));
       }
       return reply.expand((element) => element).toList();
     } else {
-      throw ArgumentError('Invalid argument type for talk: $message');
+      throw ArgumentError('Invalid message type for talk: $message');
     }
   }
 
-  Stream<Map<String, String>> streamData(List<String> sentenceToSend) async* {
+  Stream<Map<String, String>> streamData(dynamic command) async* {
+    var sentenceToSend = _parseCommand(command);
+
     var socket = _socket;
     if (socket == null) {
       throw StateError('Socket is not open.');
     }
 
-    // Send the command to the RouterOS device
     for (var word in sentenceToSend) {
       _sendLength(socket, word.length);
       socket.add(utf8.encode(word));
-      log('>>> $word');
+      _log('>>> $word');
     }
 
-    socket.add([0]); // Send zero length word to mark end of the sentence
+    socket.add([0]);
 
-    // Continuously listen to the data from the RouterOS device
     await for (var event in _socketStream) {
       var buffer = <int>[];
       buffer.addAll(event);
@@ -273,7 +231,6 @@ class Api {
           yield parsedData;
         }
 
-        // Stop streaming if we receive a "!done" or "!trap" message
         if (sentence.contains('!done') || sentence.contains('!trap')) {
           return;
         }
@@ -281,12 +238,22 @@ class Api {
     }
   }
 
-// Helper method to parse a sentence into a Map<String, String>
+  List<String> _parseCommand(String command) {
+    var parts = command.split(' ');
+    return parts.map((part) {
+      if (part.contains('=')) {
+        return '=$part';
+      } else {
+        return part;
+      }
+    }).toList();
+  }
+
   Map<String, String> _parseSentence(List<String> sentence) {
     var parsedData = <String, String>{};
     for (var word in sentence) {
       if (word.startsWith('!')) {
-        continue; // Skip control words like !re, !done, etc.
+        continue;
       }
       if (word.startsWith('=')) {
         var parts = word.substring(1).split('=');
@@ -298,12 +265,11 @@ class Api {
     return parsedData;
   }
 
-  Future<List<Map<String, String>>> send(List<String> sentence) async {
-    var reply = await communicate(sentence);
+  Future<List<Map<String, String>>> _send(List<String> sentence) async {
+    var reply = await _communicate(sentence);
 
-    // Check if there was an error in the reply
     if (reply.isNotEmpty && reply[0].isNotEmpty && reply[0][0] == '!trap') {
-      print('Command: $sentence\nReturned an error: $reply');
+      _log('Command: $sentence\nReturned an error: $reply');
       throw RouterOSTrapError("Command: $sentence\nReturned an error: $reply");
     }
 
@@ -316,7 +282,7 @@ class Api {
     for (var sentence in reply) {
       var parsedReply = <String, String>{};
       for (var word in sentence) {
-        if(word.startsWith('!')) {
+        if (word.startsWith('!')) {
           continue;
         }
         if (word.startsWith('=')) {
@@ -332,24 +298,22 @@ class Api {
     return parsedReplies;
   }
 
-
   bool isAlive() {
     if (_socket == null) {
-      log('Socket is not open.');
+      _log('Socket is not open.');
       return false;
     }
 
     try {
-      final result =
-          talk(['/system/identity/print']).timeout(Duration(seconds: 2));
-      print('Result: $result');
+      final result = talk(['/system/identity/print']).timeout(Duration(seconds: 2));
+      _log('Result: $result');
       return result != null;
     } on TimeoutException {
-      log('Socket read timeout.');
+      _log('Socket read timeout.');
       close();
       return false;
     } catch (e) {
-      log('Socket is closed or router does not respond: $e');
+      _log('Socket is closed or router does not respond: $e');
       close();
       return false;
     }
@@ -359,8 +323,28 @@ class Api {
     _socket?.destroy();
     _socket = null;
     _secureSocket = null;
-    log('API socket connection closed.');
+    _log('RouterOSClient socket connection closed.');
   }
+}
+
+class LoginError implements Exception {
+  final String message;
+  LoginError(this.message);
+}
+
+class WordTooLong implements Exception {
+  final String message;
+  WordTooLong(this.message);
+}
+
+class CreateSocketError implements Exception {
+  final String message;
+  CreateSocketError(this.message);
+}
+
+class RouterOSTrapError implements Exception {
+  final String message;
+  RouterOSTrapError(this.message);
 }
 
 extension on int {
