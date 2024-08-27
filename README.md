@@ -160,5 +160,5 @@ Contributions are welcome! Please feel free to submit a pull request or file an 
 
 ## Contact
 
-For any issues or feature requests, please contact [your email] or open an issue on GitHub.
+For any issues or feature requests, please contact [@Shafiq](https://t.me/Shafiq) or open an issue on GitHub.
 
