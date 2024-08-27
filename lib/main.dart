@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:socket_flutter/router_os_client.dart';
+import 'package:router_os_client/router_os_client.dart';
 
 void main() {
-  runApp(MyApp());
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return const MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'RouterOS Connect',
       home: RouterOSWidget(),
@@ -17,11 +19,13 @@ class MyApp extends StatelessWidget {
 }
 
 class RouterOSWidget extends StatefulWidget {
+  const RouterOSWidget({super.key});
+
   @override
-  _RouterOSWidgetState createState() => _RouterOSWidgetState();
+  RouterOSWidgetState createState() => RouterOSWidgetState();
 }
 
-class _RouterOSWidgetState extends State<RouterOSWidget> {
+class RouterOSWidgetState extends State<RouterOSWidget> {
   late RouterOSClient client;
   String status = 'Not Connected';
   List<String> connectedDevices = [];
@@ -50,7 +54,7 @@ class _RouterOSWidgetState extends State<RouterOSWidget> {
         password: passwordController.text,
         port: int.parse(portController.text),
         useSsl: false,
-        timeout: Duration(seconds: 10),
+        timeout: const Duration(seconds: 10),
         verbose: true,
       );
 
@@ -138,7 +142,7 @@ class _RouterOSWidgetState extends State<RouterOSWidget> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('RouterOS Connection'),
+        title: const Text('RouterOS Connection'),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
@@ -147,48 +151,48 @@ class _RouterOSWidgetState extends State<RouterOSWidget> {
           children: [
             TextField(
               controller: addressController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 border: OutlineInputBorder(),
                 labelText: 'RouterOS Address',
               ),
             ),
-            SizedBox(height: 10),
+            const SizedBox(height: 10),
             TextField(
               controller: userController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 border: OutlineInputBorder(),
                 labelText: 'Username',
               ),
             ),
-            SizedBox(height: 10),
+            const SizedBox(height: 10),
             TextField(
               controller: passwordController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 border: OutlineInputBorder(),
                 labelText: 'Password',
               ),
             ),
-            SizedBox(height: 10),
+            const SizedBox(height: 10),
             TextField(
               controller: portController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 border: OutlineInputBorder(),
                 labelText: 'Port',
               ),
             ),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
             ElevatedButton(
               onPressed: () async {
                 await _connectToRouter();
               },
-              child: Text('Connect'),
+              child: const Text('Connect'),
             ),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
             Text('Connection Status: $status'),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
             ListView.builder(
               shrinkWrap: true,
-              physics: NeverScrollableScrollPhysics(), // Disable internal scrolling
+              physics: const NeverScrollableScrollPhysics(), // Disable internal scrolling
               itemCount: connectedDevices.length,
               itemBuilder: (context, index) {
                 return ListTile(
@@ -198,14 +202,14 @@ class _RouterOSWidgetState extends State<RouterOSWidget> {
             ),
             TextField(
               controller: commandController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 border: OutlineInputBorder(),
                 labelText: 'Enter Command',
               ),
             ),
-            SizedBox(height: 10),
+            const SizedBox(height: 10),
             CheckboxListTile(
-              title: Text('Use Stream'),
+              title: const Text('Use Stream'),
               value: useStream,
               onChanged: (bool? value) {
                 setState(() {
@@ -213,21 +217,20 @@ class _RouterOSWidgetState extends State<RouterOSWidget> {
                 });
               },
             ),
-            SizedBox(height: 10),
-
+            const SizedBox(height: 10),
             ElevatedButton(
               onPressed: () async {
                 await _executeCommand();
               },
-              child: Text('Execute Command'),
+              child: const Text('Execute Command'),
             ),
-            SizedBox(height: 20),
-            Text('Command Output:'),
+            const SizedBox(height: 20),
+            const Text('Command Output:'),
             SingleChildScrollView(
               scrollDirection: Axis.vertical,
               child: Text(commandOutput),
             ),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
             ElevatedButton(
               onPressed: () {
                 client.close();
@@ -236,7 +239,7 @@ class _RouterOSWidgetState extends State<RouterOSWidget> {
                   connectedDevices.clear();
                 });
               },
-              child: Text('Disconnect'),
+              child: const Text('Disconnect'),
             ),
           ],
         ),
