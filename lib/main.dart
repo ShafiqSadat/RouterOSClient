@@ -41,10 +41,10 @@ class RouterOSWidgetState extends State<RouterOSWidget> {
   @override
   void initState() {
     super.initState();
-    addressController.text = '';  // Default value
-    userController.text = '';               // Default value
-    passwordController.text = '';           // Default value
-    portController.text = '';                // Default value
+    addressController.text = ''; // Default value
+    userController.text = ''; // Default value
+    passwordController.text = ''; // Default value
+    portController.text = ''; // Default value
   }
 
   Future<void> _connectToRouter() async {
@@ -72,23 +72,6 @@ class RouterOSWidgetState extends State<RouterOSWidget> {
     } catch (e) {
       setState(() {
         status = 'Connection failed: $e';
-      });
-    }
-  }
-
-  Future<void> _fetchConnectedDevices() async {
-    try {
-      client.talk(['/ip/dhcp-server/lease/print']).then((devices) {
-        setState(() {
-          connectedDevices = devices
-              .map((device) =>
-          'IP: ${device['address']}, MAC: ${device['mac-address']}')
-              .toList();
-        });
-      });
-    } catch (e) {
-      setState(() {
-        connectedDevices = ['Failed to fetch devices: $e'];
       });
     }
   }
@@ -186,9 +169,12 @@ class RouterOSWidgetState extends State<RouterOSWidget> {
             const SizedBox(height: 20),
             ElevatedButton(
               onPressed: () async {
-                if(addressController.text.isNotEmpty && userController.text.isNotEmpty && passwordController.text.isNotEmpty && portController.text.isNotEmpty) {
+                if (addressController.text.isNotEmpty &&
+                    userController.text.isNotEmpty &&
+                    passwordController.text.isNotEmpty &&
+                    portController.text.isNotEmpty) {
                   await _connectToRouter();
-                }else{
+                } else {
                   setState(() {
                     status = 'Please fill all fields';
                   });
@@ -201,7 +187,8 @@ class RouterOSWidgetState extends State<RouterOSWidget> {
             const SizedBox(height: 20),
             ListView.builder(
               shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(), // Disable internal scrolling
+              physics: const NeverScrollableScrollPhysics(),
+              // Disable internal scrolling
               itemCount: connectedDevices.length,
               itemBuilder: (context, index) {
                 return ListTile(
