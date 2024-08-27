@@ -1,5 +1,5 @@
 name: router_os_client
-description: "A new Flutter project."
+description: "RouterOSClient is a Dart/Flutter package that provides an easy-to-use interface for connecting and interacting with Mikrotik's RouterOS devices via a socket connection."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 repository: "https://github.com/ShafiqSadat/RouterOSClient.git"
