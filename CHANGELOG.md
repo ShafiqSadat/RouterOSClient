@@ -5,12 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-### Added
-- Initial setup for `router_os_client` with basic API connection.
-- Support for sending commands to RouterOS devices.
-- Error handling and logging mechanisms.
-
 ### Changed
 - Improved exception handling for better reliability during API calls.
 
@@ -32,4 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0+3] - 2024-08-27
 ### Removed
 - Removed cupertino_icons from dependencies.
+
+## [1.0.2] - 2024-08-31
+### Fix
+- fix: prevent empty maps from being added to parsed replies
+
+- Modified the `_parseReply` method to ensure that only non-empty maps are added to the `parsedReplies` list. This prevents the unnecessary `{}` from being returned at the end of command execution.
 
