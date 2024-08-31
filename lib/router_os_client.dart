@@ -48,13 +48,6 @@ class RouterOSClient {
   }) : port = port ??
       (useSsl ? 8729 : 8728); // Set port based on whether SSL is used
 
-  // Logs a message if verbose is true.
-  void _log(String message) {
-    if (verbose) {
-      logger.d(message);
-    }
-  }
-
   // Opens a socket connection to the RouterOS device.
   Future<void> _openSocket() async {
     try {
