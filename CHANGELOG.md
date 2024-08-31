@@ -33,3 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Modified the `_parseReply` method to ensure that only non-empty maps are added to the `parsedReplies` list. This prevents the unnecessary `{}` from being returned at the end of command execution.
 
+## [1.0.3] 
+### Changed
+- Replace print statements with Logger for consistent logging
+- Updated all print statements to use the Logger instance.
+- Ensured that verbose logging is handled through the logger for better control.
+- Improved error handling and log messaging with appropriate log levels (debug, info, warning, error).

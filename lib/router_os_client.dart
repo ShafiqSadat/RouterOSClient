@@ -2,7 +2,8 @@ import 'dart:async'; // For asynchronous programming and Future, Stream, Complet
 import 'dart:convert'; // For encoding and decoding UTF-8 strings
 import 'dart:io'; // For working with files, sockets, and other I/O
 
-import 'package:flutter/foundation.dart'; // For Flutter-specific utilities like debugPrint
+import 'package:flutter/foundation.dart';
+import 'package:logger/logger.dart'; // For Flutter-specific utilities like debugPrint
 
 // The RouterOSClient class handles the connection to a RouterOS device via a socket.
 class RouterOSClient {
@@ -14,14 +15,26 @@ class RouterOSClient {
   int port; // The port to connect to (8728 for non-SSL, 8729 for SSL)
   bool verbose; // If true, additional debug information will be printed
   SecurityContext?
-      context; // SSL context for secure connections (if useSsl is true)
+  context; // SSL context for secure connections (if useSsl is true)
   Duration? timeout; // Optional timeout for socket operations
+
+  var logger = Logger(
+    printer: PrettyPrinter(
+      methodCount: 2, // Number of method calls to be displayed
+      errorMethodCount: 8, // Number of method calls if stacktrace is provided
+      lineLength: 120, // Width of the output
+      colors: true, // Colorful log messages
+      printEmojis: true, // Print an emoji for each log message
+      // Should each log print contain a timestamp
+      dateTimeFormat: DateTimeFormat.onlyTimeAndSinceStart,
+    ),
+  );
 
   // Internal socket references
   Socket? _socket; // Standard TCP socket
   SecureSocket? _secureSocket; // SSL-enabled TCP socket
   late Stream<List<int>>
-      _socketStream; // Stream for handling incoming data from the socket
+  _socketStream; // Stream for handling incoming data from the socket
 
   // Constructor for the RouterOSClient class, initializing the properties.
   RouterOSClient({
@@ -34,12 +47,12 @@ class RouterOSClient {
     this.context, // SSL context is optional
     this.timeout, // Timeout is optional
   }) : port = port ??
-            (useSsl ? 8729 : 8728); // Set port based on whether SSL is used
+      (useSsl ? 8729 : 8728); // Set port based on whether SSL is used
 
   // Logs a message if verbose is true.
   void _log(String message) {
     if (verbose) {
-      debugPrint(message);
+      logger.d(message);
     }
   }
 
@@ -49,7 +62,7 @@ class RouterOSClient {
       if (useSsl) {
         // Connect using SSL if useSsl is true
         _secureSocket =
-            await SecureSocket.connect(address, port, context: context);
+        await SecureSocket.connect(address, port, context: context);
         _socket = _secureSocket;
       } else {
         // Connect using a standard TCP socket
@@ -57,7 +70,7 @@ class RouterOSClient {
       }
       _socket?.setOption(SocketOption.tcpNoDelay,
           true); // Disable Nagle's algorithm for low latency
-      _log('RouterOSClient socket connection opened.');
+      logger.i("RouterOSClient socket connection opened.");
 
       // Convert the socket stream to a broadcast stream to allow multiple listeners.
       _socketStream = _socket!.asBroadcastStream();
@@ -78,11 +91,11 @@ class RouterOSClient {
         '=password=$password'
       ]; // Prepare login command
       var reply =
-          await _communicate(sentence); // Send command and wait for reply
+      await _communicate(sentence); // Send command and wait for reply
       _checkLoginReply(reply); // Check if login was successful
       return true;
     } catch (e) {
-      _log('Login failed: $e');
+      logger.e('Login failed: $e');
       return false;
     }
   }
@@ -99,7 +112,7 @@ class RouterOSClient {
       // Send each word in the command sentence
       _sendLength(socket, word.length); // Send the length of the word
       socket.add(utf8.encode(word)); // Send the word itself encoded in UTF-8
-      _log('>>> $word');
+      logger.d('>>> $word');
     }
 
     socket.add(
@@ -121,7 +134,7 @@ class RouterOSClient {
       buffer.addAll(event); // Add the incoming data to the buffer
       while (buffer.isNotEmpty) {
         var sentence =
-            _readSentenceFromBuffer(buffer); // Read a sentence from the buffer
+        _readSentenceFromBuffer(buffer); // Read a sentence from the buffer
         receivedData.add(sentence); // Add the sentence to the received data
         if (sentence.contains('!done')) {
           // Check if the sentence indicates the end of the command
@@ -143,7 +156,7 @@ class RouterOSClient {
 
     while (buffer.isNotEmpty) {
       var length =
-          _readLengthFromBuffer(buffer); // Read the length of the next word
+      _readLengthFromBuffer(buffer); // Read the length of the next word
       if (length == 0) {
         break; // If length is zero, end of the sentence
       }
@@ -184,9 +197,9 @@ class RouterOSClient {
       var bytes = buffer.sublist(0, 4);
       buffer.removeRange(0, 4);
       length = (bytes[0] << 24) |
-          (bytes[1] << 16) |
-          (bytes[2] << 8) |
-          bytes[3]; // Full 32-bit length
+      (bytes[1] << 16) |
+      (bytes[2] << 8) |
+      bytes[3]; // Full 32-bit length
     } else {
       throw WordTooLong(
           'Received word is too long.'); // Handle case where word is too long
@@ -220,7 +233,7 @@ class RouterOSClient {
   // Checks the reply from the RouterOS device after a login attempt.
   void _checkLoginReply(List<List<String>> reply) {
     if (reply.isNotEmpty && reply[0].length == 1 && reply[0][0] == '!done') {
-      _log('Login successful!');
+      logger.i('Login successful!');
     } else if (reply.isNotEmpty &&
         reply[0].length == 2 &&
         reply[0][0] == '!trap') {
@@ -228,7 +241,7 @@ class RouterOSClient {
     } else if (reply.isNotEmpty &&
         reply[0].length == 2 &&
         reply[0][1].startsWith('=ret=')) {
-      _log('Using legacy login process.');
+      logger.w('Using legacy login process.');
     } else {
       throw LoginError(
           'Unexpected login reply: $reply'); // Handle unexpected replies
@@ -258,7 +271,7 @@ class RouterOSClient {
   // Streams data from the RouterOS device, useful for long-running commands.
   Stream<Map<String, String>> streamData(dynamic command) async* {
     var sentenceToSend =
-        _parseCommand(command); // Parse the command into a sentence
+    _parseCommand(command); // Parse the command into a sentence
 
     var socket = _socket;
     if (socket == null) {
@@ -268,7 +281,7 @@ class RouterOSClient {
     for (var word in sentenceToSend) {
       _sendLength(socket, word.length); // Send each word in the sentence
       socket.add(utf8.encode(word));
-      _log('>>> $word');
+      logger.d('>>> $word');
     }
 
     socket.add([0]); // Send a zero-length word to end the sentence
@@ -282,7 +295,7 @@ class RouterOSClient {
             buffer); // Read the sentence from the buffer
         if (sentence.isNotEmpty) {
           var parsedData =
-              _parseSentence(sentence); // Parse the sentence into a map
+          _parseSentence(sentence); // Parse the sentence into a map
           yield parsedData; // Yield each parsed sentence
         }
 
@@ -325,10 +338,10 @@ class RouterOSClient {
   // Sends a command and returns the parsed response.
   Future<List<Map<String, String>>> _send(List<String> sentence) async {
     var reply =
-        await _communicate(sentence); // Send the command and wait for the reply
+    await _communicate(sentence); // Send the command and wait for the reply
 
     if (reply.isNotEmpty && reply[0].isNotEmpty && reply[0][0] == '!trap') {
-      _log('Command: $sentence\nReturned an error: $reply');
+      logger.e('Command: $sentence\nReturned an error: $reply');
       throw RouterOSTrapError(
           "Command: $sentence\nReturned an error: $reply"); // Handle errors in the response
     }
@@ -364,21 +377,21 @@ class RouterOSClient {
   // Checks if the socket connection is still alive.
   Object isAlive() {
     if (_socket == null) {
-      _log('Socket is not open.');
+      logger.w('Socket is not open.');
       return false;
     }
 
     try {
       final result = talk(['/system/identity/print'])
           .timeout(const Duration(seconds: 2)); // Send a simple command
-      _log('Result: $result');
+      logger.d('Result: $result');
       return result;
     } on TimeoutException {
-      _log('Socket read timeout.');
+      logger.w('Socket read timeout.');
       close();
       return false;
     } catch (e) {
-      _log('Socket is closed or router does not respond: $e');
+      logger.e('Socket is closed or router does not respond: $e');
       close();
       return false;
     }
@@ -389,28 +402,49 @@ class RouterOSClient {
     _socket?.destroy();
     _socket = null;
     _secureSocket = null;
-    _log('RouterOSClient socket connection closed.');
+    logger.i('RouterOSClient socket connection closed.');
   }
 }
 
 // Custom exceptions for specific errors that may occur.
 class LoginError implements Exception {
   final String message;
+  @override
+  String toString() {
+    return message;
+  }
   LoginError(this.message);
 }
 
 class WordTooLong implements Exception {
   final String message;
+
+
+  @override
+  String toString() {
+    return message;
+  }
+
   WordTooLong(this.message);
 }
 
 class CreateSocketError implements Exception {
   final String message;
+
+  @override
+  String toString() {
+    return message;
+  }
+
   CreateSocketError(this.message);
 }
 
 class RouterOSTrapError implements Exception {
   final String message;
+  @override
+  String toString() {
+    return message;
+  }
   RouterOSTrapError(this.message);
 }
 
