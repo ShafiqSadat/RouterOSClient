@@ -353,7 +353,9 @@ class RouterOSClient {
           }
         }
       }
-      parsedReplies.add(parsedReply); // Add the parsed reply to the list
+      if (parsedReply.isNotEmpty) {
+        parsedReplies.add(parsedReply); // Add the parsed reply only if it's not empty
+      }
     }
 
     return parsedReplies; // Return the list of parsed replies
