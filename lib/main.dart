@@ -82,7 +82,7 @@ class RouterOSWidgetState extends State<RouterOSWidget> {
       if (useStream) {
         await startTorchStream(command);
       } else {
-        var result = await client.talk([command]);
+        var result = await client.talk(command);
         setState(() {
           commandOutput = result.toString();
         });

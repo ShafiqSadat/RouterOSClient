@@ -39,3 +39,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated all print statements to use the Logger instance.
 - Ensured that verbose logging is handled through the logger for better control.
 - Improved error handling and log messaging with appropriate log levels (debug, info, warning, error).
+
+## [1.0.4]
+Date: September 2, 2024
+
+### Added
+- _parseCommand Method Update:
+- Introduced a check to determine if a command part contains an = character.
+- Preserved parts containing = without modification to avoid incorrect command formatting.
+- Applied a / prefix only to base command parts that do not contain =.
+### Fixed
+- Command Parsing Issue:
+- Resolved an issue where commands with parameters (e.g., profile=1d) were incorrectly parsed by adding an extra = character. This fix ensures that commands such as /ip/hotspot/user/print profile=1d are parsed correctly and sent as /ip/hotspot/user/print with profile=1d as a parameter.
+- Corrected the behavior of the client.talk method to ensure proper communication with the RouterOS API, allowing for accurate filtering of data.
+### Improved
+- Command Handling:
+- Enhanced the robustness of the command parsing mechanism, ensuring that commands with parameters are handled accurately and without unintended modifications.

@@ -123,16 +123,20 @@ class RouterOSClient {
 
     // Listen to the incoming data stream
     _socketStream.listen((event) {
-      buffer.addAll(event); // Add the incoming data to the buffer
-      while (buffer.isNotEmpty) {
-        var sentence =
-        _readSentenceFromBuffer(buffer); // Read a sentence from the buffer
-        receivedData.add(sentence); // Add the sentence to the received data
+      buffer.addAll(event);
+
+      while (true) {
+        var sentence = _readSentenceFromBuffer(buffer);
+
+        if (sentence.isEmpty) {
+          // If the sentence is empty, it means we need to wait for more data
+          break;
+        }
+
+        receivedData.add(sentence);
         if (sentence.contains('!done')) {
-          // Check if the sentence indicates the end of the command
           if (!completer.isCompleted) {
-            completer.complete(
-                receivedData); // Complete the completer with the received data
+            completer.complete(receivedData);
           }
           break;
         }
@@ -144,20 +148,24 @@ class RouterOSClient {
 
   // Reads a sentence from the buffer and removes it from the buffer.
   List<String> _readSentenceFromBuffer(List<int> buffer) {
-    var sentence = <String>[]; // List to store words in the sentence
+    var sentence = <String>[];
 
     while (buffer.isNotEmpty) {
-      var length =
-      _readLengthFromBuffer(buffer); // Read the length of the next word
+      var length = _readLengthFromBuffer(buffer);
+
       if (length == 0) {
-        break; // If length is zero, end of the sentence
+        break;
       }
 
-      var word = utf8
-          .decode(buffer.sublist(0, length)); // Decode the word from the buffer
-      sentence.add(word); // Add the word to the sentence
-      buffer.removeRange(
-          0, length); // Remove the processed word from the buffer
+      // Check if the buffer has enough data to read the full word
+      if (buffer.length < length) {
+        // Wait until more data arrives by returning an empty sentence
+        return [];
+      }
+
+      var word = utf8.decode(buffer.sublist(0, length));
+      sentence.add(word);
+      buffer.removeRange(0, length);
     }
 
     return sentence;
@@ -242,7 +250,7 @@ class RouterOSClient {
 
   // Sends a command to the RouterOS device and returns the response.
   Future<List<Map<String, String>>> talk(dynamic message) async {
-    if (message is String) {
+    if (message.toString().contains(" ")) {
       message = _parseCommand(message); // Parse the command if it's a string
     }
 
@@ -302,11 +310,8 @@ class RouterOSClient {
   List<String> _parseCommand(String command) {
     var parts = command.split(' '); // Split the command into parts by space
     return parts.map((part) {
-      if (part.contains('=')) {
-        return '=$part'; // Prefix with '=' if it contains an '=' character
-      } else {
-        return part; // Return as is if no '=' is found
-      }
+      // Return the part as-is if it already contains '=' to avoid adding an extra '='
+      return part.contains('=') ? part : '$part';
     }).toList();
   }
 
