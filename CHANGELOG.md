@@ -83,3 +83,9 @@ Date: September 7, 2024
 - Added Dartdoc comments to all public members and classes, including exceptions (`LoginError`, `WordTooLong`, `CreateSocketError`, `RouterOSTrapError`).
 - Renamed anonymous extension to `IntToBytes` for better readability.
 - Documented the `IntToBytes` extension with a description for the `toBytes` method.
+- 
+## [1.0.8]
+Date: September 7, 2024
+
+### Change
+- Reformatted for pub.dev compliance.

@@ -65,7 +65,8 @@ class RouterOSClient {
   Future<void> _openSocket() async {
     try {
       if (useSsl) {
-        _secureSocket = await SecureSocket.connect(address, port, context: context);
+        _secureSocket =
+            await SecureSocket.connect(address, port, context: context);
         _socket = _secureSocket;
       } else {
         _socket = await Socket.connect(address, port);
@@ -175,7 +176,9 @@ class RouterOSClient {
     } else if (firstByte < 0xF0) {
       var bytes = buffer.sublist(0, 3);
       buffer.removeRange(0, 3);
-      length = ((firstByte << 24) | (bytes[0] << 16) | (bytes[1] << 8) | bytes[2]) - 0xE0000000;
+      length =
+          ((firstByte << 24) | (bytes[0] << 16) | (bytes[1] << 8) | bytes[2]) -
+              0xE0000000;
     } else if (firstByte == 0xF0) {
       var bytes = buffer.sublist(0, 4);
       buffer.removeRange(0, 4);
@@ -211,9 +214,13 @@ class RouterOSClient {
   void _checkLoginReply(List<List<String>> reply) {
     if (reply.isNotEmpty && reply[0].length == 1 && reply[0][0] == '!done') {
       logger.i('Login successful!');
-    } else if (reply.isNotEmpty && reply[0].length == 2 && reply[0][0] == '!trap') {
+    } else if (reply.isNotEmpty &&
+        reply[0].length == 2 &&
+        reply[0][0] == '!trap') {
       throw LoginError('Login error: ${reply[0][1]}');
-    } else if (reply.isNotEmpty && reply[0].length == 2 && reply[0][1].startsWith('=ret=')) {
+    } else if (reply.isNotEmpty &&
+        reply[0].length == 2 &&
+        reply[0][1].startsWith('=ret=')) {
       logger.w('Using legacy login process.');
     } else {
       throw LoginError('Unexpected login reply: $reply');
@@ -336,7 +343,8 @@ class RouterOSClient {
     }
 
     try {
-      final result = talk(['/system/identity/print']).timeout(const Duration(seconds: 2));
+      final result =
+          talk(['/system/identity/print']).timeout(const Duration(seconds: 2));
       logger.d('Result: $result');
       return result;
     } on TimeoutException {
@@ -412,7 +420,6 @@ class RouterOSTrapError implements Exception {
   @override
   String toString() => message;
 }
-
 
 /// Extension method to convert an integer to a list of bytes.
 extension on int {
