@@ -1,9 +1,8 @@
-name: router_os_client
-description: "RouterOSClient is a Dart/Flutter package that provides an easy-to-use interface for connecting and interacting with Mikrotik's RouterOS devices via a socket connection."
+name: example
+description: "RouterOS Client Example"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
-repository: "https://github.com/ShafiqSadat/RouterOSClient.git"
-
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
 # The following defines the version and build number for your application.
 # A version number is three numbers separated by dots, like 1.2.43
@@ -17,7 +16,7 @@ repository: "https://github.com/ShafiqSadat/RouterOSClient.git"
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.6
+version: 1.0.0+1
 
 environment:
   sdk: '>=3.4.0 <4.0.0'
@@ -32,8 +31,12 @@ dependencies:
   flutter:
     sdk: flutter
 
-  convert: ^3.1.1
-  logger: ^2.4.0
+
+  # The following adds the Cupertino Icons font to your application.
+  # Use with the CupertinoIcons class for iOS style icons.
+  cupertino_icons: ^1.0.6
+  router_os_client:
+    path: ../
 
 dev_dependencies:
   flutter_test:

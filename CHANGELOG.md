@@ -66,3 +66,8 @@ Date: September 7, 2024
 ### Changed
 - Added explicit handling for `message` when it is a single string to convert it into a list.
 - Updated error handling to improve robustness for dynamic inputs.
+
+## [1.0.6]
+Date: September 7, 2024
+### Added
+- Added example project to demonstrate usage of the `router_os_client` package.
