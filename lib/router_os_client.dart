@@ -250,11 +250,14 @@ class RouterOSClient {
 
   // Sends a command to the RouterOS device and returns the response.
   Future<List<Map<String, String>>> talk(dynamic message) async {
-    if (message.toString().contains(" ")) {
-      message = _parseCommand(message); // Parse the command if it's a string
+    if (message is String && message.contains(" ")) {
+      message = _parseCommand(message); // Parse the command if it's a string with spaces
     }
 
-    if (message is List<String>) {
+    if (message is String) {
+      // If message is a single string, wrap it in a list
+      return _send([message]);
+    } else if (message is List<String>) {
       return _send(message); // Send the command if it's a list of strings
     } else if (message is List<dynamic>) {
       var reply = <List<Map<String, String>>>[];

@@ -55,3 +55,14 @@ Date: September 2, 2024
 ### Improved
 - Command Handling:
 - Enhanced the robustness of the command parsing mechanism, ensuring that commands with parameters are handled accurately and without unintended modifications.
+
+## [1.0.5]
+Date: September 7, 2024
+
+### Fixed
+- Fixed issue where `talk` function would throw an "invalid arguments" error when `message` is a single string.
+- Ensured that single strings passed to `talk` are wrapped in a `List<String>` before sending to `_send` function.
+
+### Changed
+- Added explicit handling for `message` when it is a single string to convert it into a list.
+- Updated error handling to improve robustness for dynamic inputs.
