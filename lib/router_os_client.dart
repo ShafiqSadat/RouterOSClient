@@ -64,6 +64,9 @@ class RouterOSClient {
   /// Opens a socket connection to the RouterOS device.
   Future<void> _openSocket() async {
     try {
+      if(!verbose){
+        Logger.level = Level.off;
+      }
       if (useSsl) {
         _secureSocket =
             await SecureSocket.connect(address, port, context: context);

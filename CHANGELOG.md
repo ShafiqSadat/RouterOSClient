@@ -89,3 +89,10 @@ Date: September 7, 2024
 
 ### Change
 - Reformatted for pub.dev compliance.
+
+
+## [1.0.9]
+Date: September 9, 2024
+
+### Fixed
+- Fixed an issue where logs were displayed even when verbose was set to false.
