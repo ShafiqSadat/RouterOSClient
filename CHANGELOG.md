@@ -96,3 +96,9 @@ Date: September 9, 2024
 
 ### Fixed
 - Fixed an issue where logs were displayed even when verbose was set to false.
+
+## [1.0.10]
+Date: September 12, 2024
+
+### Fixed
+- Fixed stream data bug.

@@ -64,7 +64,7 @@ class RouterOSClient {
   /// Opens a socket connection to the RouterOS device.
   Future<void> _openSocket() async {
     try {
-      if(!verbose){
+      if (!verbose) {
         Logger.level = Level.off;
       }
       if (useSsl) {
@@ -253,7 +253,7 @@ class RouterOSClient {
 
   /// Streams data from the RouterOS device, useful for long-running commands.
   Stream<Map<String, String>> streamData(dynamic command) async* {
-    var sentenceToSend = _parseCommand(command);
+    var sentenceToSend = _parseCommandStream(command);
     var socket = _socket;
     if (socket == null) {
       throw StateError('Socket is not open.');
@@ -286,6 +286,18 @@ class RouterOSClient {
   List<String> _parseCommand(String command) {
     var parts = command.split(' ');
     return parts.map((part) => part.contains('=') ? part : part).toList();
+  }
+
+  // Parses a command string into the format required by RouterOS.
+  List<String> _parseCommandStream(String command) {
+    var parts = command.split(' '); // Split the command into parts by space
+    return parts.map((part) {
+      if (part.contains('=')) {
+        return '=$part'; // Prefix with '=' if it contains an '=' character
+      } else {
+        return part; // Return as is if no '=' is found
+      }
+    }).toList();
   }
 
   /// Parses a sentence from the RouterOS device into a map of key-value pairs.
