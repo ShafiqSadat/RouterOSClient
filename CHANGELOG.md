@@ -102,3 +102,9 @@ Date: September 12, 2024
 
 ### Fixed
 - Fixed stream data bug.
+
+## [1.0.11]
+Date: September 12, 2024
+
+### Fixed
+- Fixed parse command bug.

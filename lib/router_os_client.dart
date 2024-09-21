@@ -285,7 +285,16 @@ class RouterOSClient {
   /// Parses a command string into the format required by RouterOS.
   List<String> _parseCommand(String command) {
     var parts = command.split(' ');
-    return parts.map((part) => part.contains('=') ? part : part).toList();
+
+    return parts.asMap().map((index, part) {
+      if (index == 0) {
+        // For the first part (command), return it unchanged
+        return MapEntry(index, part);
+      } else {
+        // For other parts, add '=' before the part
+        return MapEntry(index, '=$part');
+      }
+    }).values.toList();
   }
 
   // Parses a command string into the format required by RouterOS.

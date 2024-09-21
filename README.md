@@ -17,7 +17,7 @@ Add the following to your `pubspec.yaml` file:
 
 ```yaml
 dependencies:
-  router_os_client: ^1.0.10
+  router_os_client: ^1.0.11
 ```
 
 Then run:
