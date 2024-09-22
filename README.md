@@ -17,7 +17,7 @@ Add the following to your `pubspec.yaml` file:
 
 ```yaml
 dependencies:
-  router_os_client: ^1.0.11
+  router_os_client: ^1.0.12
 ```
 
 Then run:
@@ -99,11 +99,11 @@ Example:
 
 ```dart
 try {
-  await client.login();
+await client.login();
 } catch (LoginError e) {
-  print('Login failed: ${e.message}');
+print('Login failed: ${e.message}');
 } catch (CreateSocketError e) {
-  print('Socket creation failed: ${e.message}');
+print('Socket creation failed: ${e.message}');
 }
 ```
 
@@ -148,6 +148,27 @@ void main() async {
 }
 ```
 
+
+
+### Example: Using `talk` with Parameters
+
+The `talk` method can now accept a `Map<String, String>` for sending commands with parameters to the RouterOS device.
+
+#### Example:
+```dart
+await client.talk('/queue/simple/add', {
+  '.id': '*1',
+  'target': '192.168.88.1/32',
+  'priority': '1',
+  'max-limit': '10M/10M',
+  'dynamic': 'false',
+  'disabled': 'false',
+});
+```
+
+This allows you to send more complex commands with key-value pairs for configuring the RouterOS device.
+
+
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
@@ -159,4 +180,3 @@ Contributions are welcome! Please feel free to submit a pull request or file an 
 ## Contact
 
 For any issues or feature requests, please contact [@Shafiq](https://t.me/Shafiq) or open an issue on GitHub.
-

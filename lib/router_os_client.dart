@@ -100,6 +100,79 @@ class RouterOSClient {
     }
   }
 
+  /// Sends a command to the RouterOS device and returns the parsed response.
+  Future<List<Map<String, String>>> talk(dynamic command,
+      [Map<String, String>? params]) async {
+    List<String> sentence = [];
+
+    if (command is String) {
+      sentence.add(command);
+    } else if (command is List<String>) {
+      sentence.addAll(command);
+    } else {
+      throw ArgumentError('Invalid command type for talk: $command');
+    }
+
+    // If parameters are provided, append them in the RouterOS format
+    if (params != null) {
+      params.forEach((key, value) {
+        sentence.add('=$key=$value');
+      });
+    }
+
+    return await _send(sentence);
+  }
+
+  /// Streams data from the RouterOS device, useful for long-running commands.
+  Stream<Map<String, String>> streamData(dynamic command,
+      [Map<String, String>? params]) async* {
+    List<String> sentence = [];
+
+    if (command is String) {
+      sentence.add(command);
+    } else if (command is List<String>) {
+      sentence.addAll(command);
+    } else {
+      throw ArgumentError('Invalid command type for streamData: $command');
+    }
+
+    // If parameters are provided, append them in the RouterOS format
+    if (params != null) {
+      params.forEach((key, value) {
+        sentence.add('=$key=$value');
+      });
+    }
+
+    var socket = _socket;
+    if (socket == null) {
+      throw StateError('Socket is not open.');
+    }
+
+    // Send each word of the sentence to the socket
+    for (var word in sentence) {
+      _sendLength(socket, word.length);
+      socket.add(utf8.encode(word));
+      logger.d('>>> $word');
+    }
+    socket.add([0]); // End of sentence indicator
+
+    // Listen and yield data as it comes in
+    await for (var event in _socketStream) {
+      var buffer = <int>[];
+      buffer.addAll(event);
+      while (buffer.isNotEmpty) {
+        var sentence = _readSentenceFromBuffer(buffer);
+        if (sentence.isNotEmpty) {
+          var parsedData = _parseSentence(sentence);
+          yield parsedData;
+        }
+        if (sentence.contains('!done') || sentence.contains('!trap')) {
+          return;
+        }
+      }
+    }
+  }
+
   /// Sends a command to the RouterOS device and receives the reply.
   Future<List<List<String>>> _communicate(List<String> sentenceToSend) async {
     var socket = _socket;
@@ -213,102 +286,6 @@ class RouterOSClient {
     }
   }
 
-  /// Checks the reply from the RouterOS device after a login attempt.
-  void _checkLoginReply(List<List<String>> reply) {
-    if (reply.isNotEmpty && reply[0].length == 1 && reply[0][0] == '!done') {
-      logger.i('Login successful!');
-    } else if (reply.isNotEmpty &&
-        reply[0].length == 2 &&
-        reply[0][0] == '!trap') {
-      throw LoginError('Login error: ${reply[0][1]}');
-    } else if (reply.isNotEmpty &&
-        reply[0].length == 2 &&
-        reply[0][1].startsWith('=ret=')) {
-      logger.w('Using legacy login process.');
-    } else {
-      throw LoginError('Unexpected login reply: $reply');
-    }
-  }
-
-  /// Sends a command to the RouterOS device and returns the parsed response.
-  Future<List<Map<String, String>>> talk(dynamic message) async {
-    if (message is String && message.contains(" ")) {
-      message = _parseCommand(message);
-    }
-
-    if (message is String) {
-      return _send([message]);
-    } else if (message is List<String>) {
-      return _send(message);
-    } else if (message is List<dynamic>) {
-      var reply = <List<Map<String, String>>>[];
-      for (var sentence in message) {
-        reply.add(await _send(sentence));
-      }
-      return reply.expand((element) => element).toList();
-    } else {
-      throw ArgumentError('Invalid message type for talk: $message');
-    }
-  }
-
-  /// Streams data from the RouterOS device, useful for long-running commands.
-  Stream<Map<String, String>> streamData(dynamic command) async* {
-    var sentenceToSend = _parseCommandStream(command);
-    var socket = _socket;
-    if (socket == null) {
-      throw StateError('Socket is not open.');
-    }
-
-    for (var word in sentenceToSend) {
-      _sendLength(socket, word.length);
-      socket.add(utf8.encode(word));
-      logger.d('>>> $word');
-    }
-    socket.add([0]);
-
-    await for (var event in _socketStream) {
-      var buffer = <int>[];
-      buffer.addAll(event);
-      while (buffer.isNotEmpty) {
-        var sentence = _readSentenceFromBuffer(buffer);
-        if (sentence.isNotEmpty) {
-          var parsedData = _parseSentence(sentence);
-          yield parsedData;
-        }
-        if (sentence.contains('!done') || sentence.contains('!trap')) {
-          return;
-        }
-      }
-    }
-  }
-
-  /// Parses a command string into the format required by RouterOS.
-  List<String> _parseCommand(String command) {
-    var parts = command.split(' ');
-
-    return parts.asMap().map((index, part) {
-      if (index == 0) {
-        // For the first part (command), return it unchanged
-        return MapEntry(index, part);
-      } else {
-        // For other parts, add '=' before the part
-        return MapEntry(index, '=$part');
-      }
-    }).values.toList();
-  }
-
-  // Parses a command string into the format required by RouterOS.
-  List<String> _parseCommandStream(String command) {
-    var parts = command.split(' '); // Split the command into parts by space
-    return parts.map((part) {
-      if (part.contains('=')) {
-        return '=$part'; // Prefix with '=' if it contains an '=' character
-      } else {
-        return part; // Return as is if no '=' is found
-      }
-    }).toList();
-  }
-
   /// Parses a sentence from the RouterOS device into a map of key-value pairs.
   Map<String, String> _parseSentence(List<String> sentence) {
     var parsedData = <String, String>{};
@@ -324,6 +301,23 @@ class RouterOSClient {
       }
     }
     return parsedData;
+  }
+
+  /// Checks the reply from the RouterOS device after a login attempt.
+  void _checkLoginReply(List<List<String>> reply) {
+    if (reply.isNotEmpty && reply[0].length == 1 && reply[0][0] == '!done') {
+      logger.i('Login successful!');
+    } else if (reply.isNotEmpty &&
+        reply[0].length == 2 &&
+        reply[0][0] == '!trap') {
+      throw LoginError('Login error: ${reply[0][1]}');
+    } else if (reply.isNotEmpty &&
+        reply[0].length == 2 &&
+        reply[0][1].startsWith('=ret=')) {
+      logger.w('Using legacy login process.');
+    } else {
+      throw LoginError('Unexpected login reply: $reply');
+    }
   }
 
   /// Sends a command and returns the parsed response.

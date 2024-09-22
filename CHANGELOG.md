@@ -108,3 +108,19 @@ Date: September 12, 2024
 
 ### Fixed
 - Fixed parse command bug.
+
+## [1.0.12]
+Date: September 22, 2024
+
+### Added
+- **Support for complex commands in `talk` and `streamData`**:
+    - `talk` and `streamData` methods now accept both simple commands (strings) and complex commands with parameters (`Map<String, String>`).
+    - Parameters are automatically converted into the RouterOS command format (`=key=value`).
+
+- **`_parseSentence` method**:
+    - A new method to parse RouterOS responses into key-value pairs for easier handling of device responses.
+
+### Improved
+- **Code flexibility and command handling**:
+    - Improved flexibility by allowing both string-based and map-based input for commands sent to the RouterOS device.
+    - Better handling of both types of inputs while maintaining backward compatibility.

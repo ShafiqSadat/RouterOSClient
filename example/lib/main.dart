@@ -96,7 +96,10 @@ class RouterOSWidgetState extends State<RouterOSWidget> {
 
   Future<void> startTorchStream(String command) async {
     try {
-      var stream = client.streamData(command);
+      var stream = client.streamData('/tool/torch', {
+        'interface': 'wifi_bridge',
+        'src-address': '0.0.0.0/0'
+      });
 
       await for (var sentence in stream) {
         setState(() {
