@@ -124,3 +124,48 @@ Date: September 22, 2024
 - **Code flexibility and command handling**:
     - Improved flexibility by allowing both string-based and map-based input for commands sent to the RouterOS device.
     - Better handling of both types of inputs while maintaining backward compatibility.
+
+
+## [2.0.0]
+Date: June 28, 2025
+
+### Added
+- Tag Support for RouterOS API:
+  - TaggedResponse class for handling tagged command responses with completion and error status
+  - TaggedCommand class for batch operations with automatic tag management
+  - talkTagged() method for individual tagged commands
+  - talkMultiple() method for concurrent command execution
+  - cancelTagged() method for cancelling specific commands by tag
+
+- Enhanced Command Handling:
+  - Support for complex commands in talk and streamData methods
+  - Commands now accept both simple strings and complex parameters (Map<String, String>)
+  - Parameters automatically converted to RouterOS format (=key=value)
+
+- Response Processing:
+  - Tag-based response routing system for concurrent operations
+  - Enhanced error handling with tag-specific error messages
+  - Stream broadcasting for multiple tagged responses
+
+### Improved
+- Performance:
+  - Concurrent command execution without multiple socket connections
+  - Single socket handles multiple simultaneous operations efficiently
+  - Reduced latency through parallel command processing
+
+- Code Flexibility:
+  - Backward compatibility maintained for all existing code
+  - Optional tag parameters in enhanced talk() and streamData() methods
+  - Improved command handling with both string and map-based inputs
+
+- Developer Experience:
+  - Comprehensive error handling with tag context
+  - Enhanced logging and debugging capabilities
+  - Clear separation between tagged and non-tagged operations
+
+### Technical Details
+- Full RouterOS API compliance for tag implementation
+- Tags sent as .tag=value API attribute words
+- Automatic tag generation when not specified
+- Proper cleanup of completed tagged commands
+- Thread-safe concurrent command management
