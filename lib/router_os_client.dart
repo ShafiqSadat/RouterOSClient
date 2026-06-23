@@ -1,8 +1,14 @@
 import 'dart:async'; // For asynchronous programming and Future, Stream, Completer, etc.
+import 'dart:collection'; // For Queue (FIFO routing of untagged replies)
 import 'dart:convert'; // For encoding and decoding UTF-8 strings
 import 'dart:io'; // For working with files, sockets, and other I/O
 
-import 'package:logger/logger.dart'; // For Flutter-specific utilities like debugPrint
+import 'package:logger/logger.dart'; // For structured logging
+
+import 'src/protocol.dart';
+
+// Re-export the protocol-level exception so it stays part of the public API.
+export 'src/protocol.dart' show WordTooLong;
 
 /// Response object that includes tag information
 class TaggedResponse {
@@ -21,6 +27,7 @@ class TaggedResponse {
   /// Error message if this is an error response
   final String? errorMessage;
 
+  /// Creates a [TaggedResponse].
   TaggedResponse({
     required this.data,
     this.tag,
@@ -28,6 +35,15 @@ class TaggedResponse {
     this.isError = false,
     this.errorMessage,
   });
+}
+
+/// Internal bookkeeping for an in-flight untagged command. RouterOS processes
+/// untagged commands sequentially, so replies are matched to commands in FIFO
+/// order, each command's reply ending at its `!done` sentence.
+class _UntaggedPending {
+  final Completer<List<List<String>>> completer =
+      Completer<List<List<String>>>();
+  final List<List<String>> received = [];
 }
 
 /// The `RouterOSClient` class handles the connection to a RouterOS device via a socket.
@@ -53,7 +69,7 @@ class RouterOSClient {
   /// SSL context for secure connections (if `useSsl` is `true`).
   SecurityContext? context;
 
-  /// Optional timeout for socket operations.
+  /// Optional timeout applied to connecting and to awaiting command replies.
   Duration? timeout;
 
   /// Logger instance for logging events and debug information.
@@ -75,15 +91,30 @@ class RouterOSClient {
   /// Stream for handling incoming data from the socket.
   late Stream<List<int>> _socketStream;
 
-  /// Map to store pending tagged commands and their completers
+  /// Generates unique, collision-free command tags.
+  final TagGenerator _tagGenerator = TagGenerator();
+
+  /// Tags currently being tracked (so incoming sentences route correctly even
+  /// for fire-and-forget consumers like [streamData]).
+  final Set<String> _activeTags = {};
+
+  /// Pending tagged commands awaiting their `!done`.
   final Map<String, Completer<TaggedResponse>> _pendingTaggedCommands = {};
 
-  /// Completer for non-tagged commands (legacy behavior)
-  Completer<List<List<String>>>? _currentCompleter;
+  /// Accumulated data sentences per tag, assembled until `!done`.
+  final Map<String, List<Map<String, String>>> _taggedAccumulator = {};
 
-  /// Stream controller for broadcasting tagged responses
-  final StreamController<TaggedResponse> _taggedResponseController =
-  StreamController<TaggedResponse>.broadcast();
+  /// Error message per tag (key present means a `!trap` was seen).
+  final Map<String, String?> _taggedError = {};
+
+  /// FIFO queue of in-flight untagged commands.
+  final Queue<_UntaggedPending> _untaggedQueue = Queue<_UntaggedPending>();
+
+  /// Stream controller for broadcasting tagged responses.
+  /// Recreated on (re)connect because a closed broadcast controller cannot be
+  /// reused.
+  StreamController<TaggedResponse> _taggedResponseController =
+      StreamController<TaggedResponse>.broadcast();
 
   /// Constructor for the `RouterOSClient` class, initializing the properties.
   RouterOSClient({
@@ -103,12 +134,23 @@ class RouterOSClient {
       if (!verbose) {
         Logger.level = Level.off;
       }
+
+      // A closed broadcast controller cannot be reused; recreate it so the
+      // client can reconnect after a previous close().
+      if (_taggedResponseController.isClosed) {
+        _taggedResponseController = StreamController<TaggedResponse>.broadcast();
+      }
+
       if (useSsl) {
-        _secureSocket =
-        await SecureSocket.connect(address, port, context: context);
+        _secureSocket = await SecureSocket.connect(
+          address,
+          port,
+          context: context,
+          timeout: timeout,
+        );
         _socket = _secureSocket;
       } else {
-        _socket = await Socket.connect(address, port);
+        _socket = await Socket.connect(address, port, timeout: timeout);
       }
       _socket?.setOption(SocketOption.tcpNoDelay, true);
       logger.i("RouterOSClient socket connection opened.");
@@ -121,69 +163,105 @@ class RouterOSClient {
     }
   }
 
-  /// Starts listening for responses and routes them based on tags
+  /// Starts listening for responses and routes them based on tags.
   void _startListening() {
-    var buffer = <int>[];
+    final sentenceBuffer = SentenceBuffer();
 
     _socketStream.listen((event) {
-      buffer.addAll(event);
+      sentenceBuffer.addBytes(event);
       while (true) {
-        var sentence = _readSentenceFromBuffer(buffer);
-        if (sentence.isEmpty) {
-          break;
+        final sentence = sentenceBuffer.nextSentence();
+        if (sentence == null) {
+          break; // Wait for more bytes.
         }
         _handleReceivedSentence(sentence);
       }
     });
   }
 
-  /// Handles a received sentence and routes it based on tag
+  /// Handles a received sentence and routes it based on tag.
   void _handleReceivedSentence(List<String> sentence) {
-    String? tag = _extractTag(sentence);
-    bool isDone = sentence.contains('!done');
-    bool isError = sentence.contains('!trap');
+    final tag = _extractTag(sentence);
+    final isDone = sentence.contains('!done');
+    final isError = sentence.contains('!trap');
 
-    if (tag != null && _pendingTaggedCommands.containsKey(tag)) {
-      // Handle tagged response
-      var parsedData = _parseReply([sentence]);
-      var response = TaggedResponse(
-        data: parsedData,
-        tag: tag,
-        isDone: isDone,
-        isError: isError,
-        errorMessage: isError ? _extractErrorMessage(sentence) : null,
-      );
-
-      // Broadcast to stream
-      _taggedResponseController.add(response);
-
-      // Complete the specific tagged command if done or error
-      if (isDone || isError) {
-        var completer = _pendingTaggedCommands.remove(tag);
-        completer?.complete(response);
-      }
+    if (tag != null && _activeTags.contains(tag)) {
+      _handleTaggedSentence(sentence, tag, isDone: isDone, isError: isError);
     } else {
-      // Handle non-tagged response (legacy behavior)
-      if (_currentCompleter != null && !_currentCompleter!.isCompleted) {
-        if (_currentReceivedData == null) {
-          _currentReceivedData = <List<String>>[];
-        }
-        _currentReceivedData!.add(sentence);
+      _handleUntaggedSentence(sentence, isDone: isDone);
+    }
+  }
 
-        if (isDone) {
-          _currentCompleter!.complete(_currentReceivedData!);
-          _currentReceivedData = null;
-        }
+  /// Routes a sentence belonging to a tracked tag.
+  void _handleTaggedSentence(List<String> sentence, String tag,
+      {required bool isDone, required bool isError}) {
+    final parsed = parseSentence(sentence);
+    final errorMessage = isError ? _extractErrorMessage(sentence) : null;
+
+    // Broadcast the individual sentence for stream consumers.
+    _taggedResponseController.add(TaggedResponse(
+      data: parsed.isEmpty ? const [] : [parsed],
+      tag: tag,
+      isDone: isDone,
+      isError: isError,
+      errorMessage: errorMessage,
+    ));
+
+    if (parsed.isNotEmpty) {
+      (_taggedAccumulator[tag] ??= []).add(parsed);
+    }
+    if (isError) {
+      _taggedError[tag] = errorMessage;
+    }
+
+    // RouterOS terminates every command reply with !done (a !trap is followed
+    // by its own !done), so only !done completes the command.
+    if (isDone) {
+      _activeTags.remove(tag);
+      final data = _taggedAccumulator.remove(tag) ?? [];
+      final hadError = _taggedError.containsKey(tag);
+      final message = _taggedError.remove(tag);
+      final completer = _pendingTaggedCommands.remove(tag);
+      completer?.complete(TaggedResponse(
+        data: data,
+        tag: tag,
+        isDone: true,
+        isError: hadError,
+        errorMessage: message,
+      ));
+    }
+  }
+
+  /// Routes a sentence belonging to the current untagged command (FIFO).
+  void _handleUntaggedSentence(List<String> sentence, {required bool isDone}) {
+    if (_untaggedQueue.isEmpty) {
+      logger.w('Received an untagged sentence with no pending command: $sentence');
+      return;
+    }
+
+    final pending = _untaggedQueue.first;
+    pending.received.add(sentence);
+
+    if (isDone) {
+      _untaggedQueue.removeFirst();
+      if (!pending.completer.isCompleted) {
+        pending.completer.complete(pending.received);
       }
     }
   }
 
-  /// Current received data for non-tagged commands
-  List<List<String>>? _currentReceivedData;
+  /// Begins tracking a tag, optionally registering a completer to await.
+  void _beginTagged(String tag, {Completer<TaggedResponse>? completer}) {
+    _activeTags.add(tag);
+    _taggedAccumulator[tag] = [];
+    if (completer != null) {
+      _pendingTaggedCommands[tag] = completer;
+    }
+  }
 
-  /// Extracts tag from a sentence
+  /// Extracts the tag from a sentence.
   String? _extractTag(List<String> sentence) {
-    for (var word in sentence) {
+    for (final word in sentence) {
       if (word.startsWith('.tag=')) {
         return word.substring(5); // Remove '.tag=' prefix
       }
@@ -191,9 +269,9 @@ class RouterOSClient {
     return null;
   }
 
-  /// Extracts error message from a !trap sentence
+  /// Extracts the error message from a !trap sentence.
   String? _extractErrorMessage(List<String> sentence) {
-    for (var word in sentence) {
+    for (final word in sentence) {
       if (word.startsWith('=message=')) {
         return word.substring(9); // Remove '=message=' prefix
       }
@@ -207,8 +285,8 @@ class RouterOSClient {
   Future<bool> login() async {
     try {
       await _openSocket();
-      var sentence = ['/login', '=name=$user', '=password=$password'];
-      var reply = await _communicate(sentence);
+      final sentence = ['/login', '=name=$user', '=password=$password'];
+      final reply = await _sendUntagged(sentence);
       _checkLoginReply(reply);
       return true;
     } catch (e) {
@@ -224,13 +302,16 @@ class RouterOSClient {
   /// [tag] - Optional tag to identify this command and its responses
   Future<List<Map<String, String>>> talk(dynamic command,
       [Map<String, String>? params, String? tag]) async {
-
     if (tag != null) {
-      var response = await talkTagged(command, params, tag);
+      final response = await talkTagged(command, params, tag);
+      if (response.isError) {
+        throw RouterOSTrapError(
+            'Command: $command\nReturned an error: ${response.errorMessage}');
+      }
       return response.data;
     } else {
-      // Legacy behavior for non-tagged commands
-      List<String> sentence = _buildSentence(command, params, null);
+      // Legacy behavior for non-tagged commands.
+      final sentence = _buildSentence(command, params, null);
       return await _send(sentence);
     }
   }
@@ -242,59 +323,59 @@ class RouterOSClient {
   /// [tag] - Tag to identify this command and its responses
   Future<TaggedResponse> talkTagged(dynamic command,
       [Map<String, String>? params, String? tag]) async {
+    tag ??= _tagGenerator.next();
+    final sentence = _buildSentence(command, params, tag);
 
-    tag ??= _generateTag();
-    List<String> sentence = _buildSentence(command, params, tag);
+    final completer = Completer<TaggedResponse>();
+    _beginTagged(tag, completer: completer);
 
-    // Create completer for this tagged command
-    var completer = Completer<TaggedResponse>();
-    _pendingTaggedCommands[tag] = completer;
-
-    // Send the command
     await _sendTaggedCommand(sentence);
 
-    // Wait for response
-    return await completer.future;
+    final future = completer.future;
+    return timeout != null ? future.timeout(timeout!) : future;
   }
 
-  /// Sends multiple commands simultaneously with tags
+  /// Sends multiple commands simultaneously with tags.
   ///
   /// [commands] - List of commands with their parameters and optional tags
-  /// Returns a stream of tagged responses as they arrive
+  /// Returns a stream of tagged responses as they arrive.
   Stream<TaggedResponse> talkMultiple(List<TaggedCommand> commands) async* {
-    // Send all commands
-    for (var cmd in commands) {
-      var tag = cmd.tag ?? _generateTag();
-      var sentence = _buildSentence(cmd.command, cmd.params, tag);
+    final tags = <String>{};
 
-      var completer = Completer<TaggedResponse>();
-      _pendingTaggedCommands[tag] = completer;
-
+    // Send all commands.
+    for (final cmd in commands) {
+      final tag = cmd.tag ?? _tagGenerator.next();
+      tags.add(tag);
+      final sentence = _buildSentence(cmd.command, cmd.params, tag);
+      _beginTagged(tag);
       await _sendTaggedCommand(sentence);
     }
 
-    // Yield responses as they arrive
-    await for (var response in _taggedResponseController.stream) {
-      if (commands.any((cmd) => (cmd.tag ?? '') == response.tag)) {
+    // Yield responses as they arrive.
+    await for (final response in _taggedResponseController.stream) {
+      if (response.tag != null && tags.contains(response.tag)) {
         yield response;
 
-        // Stop if all commands are done
-        if (_pendingTaggedCommands.isEmpty) {
+        if (response.isDone) {
+          tags.remove(response.tag);
+        }
+        if (tags.isEmpty) {
           break;
         }
       }
     }
   }
 
-  /// Cancels a command with the specified tag
+  /// Cancels a command with the specified tag.
   Future<void> cancelTagged(String tag) async {
-    var sentence = ['/cancel', '=tag=$tag'];
+    final sentence = ['/cancel', '=tag=$tag'];
     await _sendTaggedCommand(sentence);
   }
 
-  /// Builds a sentence from command, parameters, and tag
-  List<String> _buildSentence(dynamic command, Map<String, String>? params, String? tag) {
-    List<String> sentence = [];
+  /// Builds a sentence from command, parameters, and tag.
+  List<String> _buildSentence(
+      dynamic command, Map<String, String>? params, String? tag) {
+    final sentence = <String>[];
 
     if (command is String) {
       sentence.add(command);
@@ -304,14 +385,12 @@ class RouterOSClient {
       throw ArgumentError('Invalid command type: $command');
     }
 
-    // Add parameters
     if (params != null) {
       params.forEach((key, value) {
         sentence.add('=$key=$value');
       });
     }
 
-    // Add tag if specified
     if (tag != null && tag.isNotEmpty) {
       sentence.add('.tag=$tag');
     }
@@ -319,24 +398,13 @@ class RouterOSClient {
     return sentence;
   }
 
-  /// Generates a unique tag
-  String _generateTag() {
-    return DateTime.now().millisecondsSinceEpoch.toString();
-  }
-
-  /// Sends a tagged command without waiting for response
+  /// Sends a tagged command without waiting for its reply.
   Future<void> _sendTaggedCommand(List<String> sentence) async {
-    var socket = _socket;
+    final socket = _socket;
     if (socket == null) {
       throw StateError('Socket is not open.');
     }
-
-    for (var word in sentence) {
-      _sendLength(socket, word.length);
-      socket.add(utf8.encode(word));
-      logger.d('>>> $word');
-    }
-    socket.add([0]); // End of sentence indicator
+    _writeSentence(socket, sentence);
   }
 
   /// Streams data from the RouterOS device, useful for long-running commands.
@@ -346,25 +414,22 @@ class RouterOSClient {
   /// [tag] - Optional tag for this stream
   Stream<Map<String, String>> streamData(dynamic command,
       [Map<String, String>? params, String? tag]) async* {
+    tag ??= _tagGenerator.next();
+    final sentence = _buildSentence(command, params, tag);
 
-    tag ??= _generateTag();
-    List<String> sentence = _buildSentence(command, params, tag);
-
-    var socket = _socket;
+    final socket = _socket;
     if (socket == null) {
       throw StateError('Socket is not open.');
     }
 
-    // Send the command
-    await _sendTaggedCommand(sentence);
+    _beginTagged(tag);
+    _writeSentence(socket, sentence);
 
-    // Listen for tagged responses
-    await for (var response in _taggedResponseController.stream) {
+    await for (final response in _taggedResponseController.stream) {
       if (response.tag == tag) {
-        for (var data in response.data) {
+        for (final data in response.data) {
           yield data;
         }
-
         if (response.isDone || response.isError) {
           break;
         }
@@ -372,126 +437,44 @@ class RouterOSClient {
     }
   }
 
-  /// Sends a command to the RouterOS device and receives the reply.
-  Future<List<List<String>>> _communicate(List<String> sentenceToSend) async {
-    var socket = _socket;
+  /// Sends an untagged command and returns the raw reply sentences.
+  ///
+  /// The pending entry is queued before the bytes are written, with no `await`
+  /// in between, so that concurrent untagged commands keep their FIFO order.
+  Future<List<List<String>>> _sendUntagged(List<String> sentence) {
+    final socket = _socket;
     if (socket == null) {
       throw StateError('Socket is not open.');
     }
 
-    for (var word in sentenceToSend) {
-      _sendLength(socket, word.length);
-      socket.add(utf8.encode(word));
+    final pending = _UntaggedPending();
+    _untaggedQueue.add(pending);
+    _writeSentence(socket, sentence);
+
+    final future = pending.completer.future;
+    return timeout != null ? future.timeout(timeout!) : future;
+  }
+
+  /// Writes a full sentence (length-prefixed words + terminator) to the socket.
+  void _writeSentence(Socket socket, List<String> words) {
+    for (final word in words) {
+      final encoded = utf8.encode(word);
+      socket.add(encodeLength(encoded.length));
+      socket.add(encoded);
       logger.d('>>> $word');
     }
     socket.add([0]); // End of sentence indicator
-
-    return await _receiveData();
-  }
-
-  /// Receives data from the socket until a complete reply is received.
-  Future<List<List<String>>> _receiveData() async {
-    var completer = Completer<List<List<String>>>();
-    _currentCompleter = completer;
-    return completer.future;
-  }
-
-  /// Reads a sentence from the buffer and removes it from the buffer.
-  List<String> _readSentenceFromBuffer(List<int> buffer) {
-    var sentence = <String>[];
-    while (buffer.isNotEmpty) {
-      var length = _readLengthFromBuffer(buffer);
-      if (length == 0) {
-        break;
-      }
-      if (buffer.length < length) {
-        return [];
-      }
-      var word = utf8.decode(buffer.sublist(0, length));
-      sentence.add(word);
-      buffer.removeRange(0, length);
-    }
-    return sentence;
-  }
-
-  /// Reads the length of the next word in the buffer.
-  int _readLengthFromBuffer(List<int> buffer) {
-    var firstByte = buffer.removeAt(0);
-    int length;
-
-    // Handle length encoding formats.
-    if (firstByte < 0x80) {
-      length = firstByte;
-    } else if (firstByte < 0xC0) {
-      var secondByte = buffer.removeAt(0);
-      length = ((firstByte << 8) | secondByte) - 0x8000;
-    } else if (firstByte < 0xE0) {
-      var bytes = buffer.sublist(0, 2);
-      buffer.removeRange(0, 2);
-      length = ((firstByte << 16) | (bytes[0] << 8) | bytes[1]) - 0xC00000;
-    } else if (firstByte < 0xF0) {
-      var bytes = buffer.sublist(0, 3);
-      buffer.removeRange(0, 3);
-      length =
-          ((firstByte << 24) | (bytes[0] << 16) | (bytes[1] << 8) | bytes[2]) -
-              0xE0000000;
-    } else if (firstByte == 0xF0) {
-      var bytes = buffer.sublist(0, 4);
-      buffer.removeRange(0, 4);
-      length = (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3];
-    } else {
-      throw WordTooLong('Received word is too long.');
-    }
-    return length;
-  }
-
-  /// Sends the length of a word to the RouterOS device.
-  void _sendLength(Socket socket, int length) {
-    if (length < 0x80) {
-      socket.add([length]);
-    } else if (length < 0x4000) {
-      length += 0x8000;
-      socket.add(length.toBytes(2));
-    } else if (length < 0x200000) {
-      length += 0xC00000;
-      socket.add(length.toBytes(3));
-    } else if (length < 0x10000000) {
-      length += 0xE0000000;
-      socket.add(length.toBytes(4));
-    } else if (length < 0x100000000) {
-      socket.add([0xF0]);
-      socket.add(length.toBytes(4));
-    } else {
-      throw WordTooLong('Word is too long. Max length is 4294967295.');
-    }
-  }
-
-  /// Parses a sentence from the RouterOS device into a map of key-value pairs.
-  Map<String, String> _parseSentence(List<String> sentence) {
-    var parsedData = <String, String>{};
-    for (var word in sentence) {
-      if (word.startsWith('!')) {
-        continue;
-      }
-      if (word.startsWith('=')) {
-        var parts = word.substring(1).split('=');
-        if (parts.length == 2) {
-          parsedData[parts[0]] = parts[1];
-        }
-      }
-      // Note: API attribute words starting with '.' (like .tag) are handled separately
-    }
-    return parsedData;
   }
 
   /// Checks the reply from the RouterOS device after a login attempt.
   void _checkLoginReply(List<List<String>> reply) {
-    if (reply.isNotEmpty && reply[0].length == 1 && reply[0][0] == '!done') {
-      logger.i('Login successful!');
+    if (reply.isNotEmpty && reply[0].isNotEmpty && reply[0][0] == '!trap') {
+      final message = reply[0].length > 1 ? reply[0][1] : 'unknown error';
+      throw LoginError('Login error: $message');
     } else if (reply.isNotEmpty &&
-        reply[0].length == 2 &&
-        reply[0][0] == '!trap') {
-      throw LoginError('Login error: ${reply[0][1]}');
+        reply[0].length == 1 &&
+        reply[0][0] == '!done') {
+      logger.i('Login successful!');
     } else if (reply.isNotEmpty &&
         reply[0].length == 2 &&
         reply[0][1].startsWith('=ret=')) {
@@ -501,10 +484,11 @@ class RouterOSClient {
     }
   }
 
-  /// Sends a command and returns the parsed response.
+  /// Sends an untagged command and returns the parsed response.
   Future<List<Map<String, String>>> _send(List<String> sentence) async {
-    var reply = await _communicate(sentence);
-    if (reply.isNotEmpty && reply[0].isNotEmpty && reply[0][0] == '!trap') {
+    final reply = await _sendUntagged(sentence);
+    final hasTrap = reply.any((s) => s.isNotEmpty && s[0] == '!trap');
+    if (hasTrap) {
       logger.e('Command: $sentence\nReturned an error: $reply');
       throw RouterOSTrapError("Command: $sentence\nReturned an error: $reply");
     }
@@ -513,39 +497,30 @@ class RouterOSClient {
 
   /// Parses a reply from the RouterOS device into a list of maps.
   List<Map<String, String>> _parseReply(List<List<String>> reply) {
-    var parsedReplies = <Map<String, String>>[];
-    for (var sentence in reply) {
-      var parsedReply = <String, String>{};
-      for (var word in sentence) {
-        if (word.startsWith('!')) {
-          continue;
-        }
-        if (word.startsWith('=')) {
-          var parts = word.substring(1).split('=');
-          if (parts.length == 2) {
-            parsedReply[parts[0]] = parts[1];
-          }
-        }
-      }
-      if (parsedReply.isNotEmpty) {
-        parsedReplies.add(parsedReply);
+    final parsedReplies = <Map<String, String>>[];
+    for (final sentence in reply) {
+      final parsed = parseSentence(sentence);
+      if (parsed.isNotEmpty) {
+        parsedReplies.add(parsed);
       }
     }
     return parsedReplies;
   }
 
   /// Checks if the socket connection is still alive by sending a simple command.
-  Object isAlive() {
+  ///
+  /// Returns `true` if the device responds within two seconds.
+  Future<bool> isAlive() async {
     if (_socket == null) {
       logger.w('Socket is not open.');
       return false;
     }
 
     try {
-      final result =
-      talk(['/system/identity/print']).timeout(const Duration(seconds: 2));
+      final result = await talk(['/system/identity/print'])
+          .timeout(const Duration(seconds: 2));
       logger.d('Result: $result');
-      return result;
+      return true;
     } on TimeoutException {
       logger.w('Socket read timeout.');
       close();
@@ -562,23 +537,43 @@ class RouterOSClient {
     _socket?.destroy();
     _socket = null;
     _secureSocket = null;
-    _taggedResponseController.close();
+
+    // Fail any in-flight commands rather than leaving their futures hanging.
+    for (final pending in _untaggedQueue) {
+      if (!pending.completer.isCompleted) {
+        pending.completer.completeError(StateError('Connection closed.'));
+      }
+    }
+    _untaggedQueue.clear();
+    for (final completer in _pendingTaggedCommands.values) {
+      if (!completer.isCompleted) {
+        completer.completeError(StateError('Connection closed.'));
+      }
+    }
     _pendingTaggedCommands.clear();
+    _activeTags.clear();
+    _taggedAccumulator.clear();
+    _taggedError.clear();
+
+    if (!_taggedResponseController.isClosed) {
+      _taggedResponseController.close();
+    }
     logger.i('RouterOSClient socket connection closed.');
   }
 }
 
-/// Represents a tagged command for batch operations
+/// Represents a tagged command for batch operations.
 class TaggedCommand {
-  /// The command to execute
+  /// The command to execute.
   final dynamic command;
 
-  /// Parameters for the command
+  /// Parameters for the command.
   final Map<String, String>? params;
 
-  /// Optional tag (will be auto-generated if null)
+  /// Optional tag (will be auto-generated if null).
   final String? tag;
 
+  /// Creates a [TaggedCommand].
   TaggedCommand({
     required this.command,
     this.params,
@@ -593,20 +588,6 @@ class LoginError implements Exception {
 
   /// Creates a [LoginError] with the given error [message].
   LoginError(this.message);
-
-  @override
-  String toString() => message;
-}
-
-/// Custom exception for handling long words.
-///
-/// This exception is thrown when the word received from the RouterOS device is too long.
-class WordTooLong implements Exception {
-  /// The error message associated with the long word error.
-  final String message;
-
-  /// Creates a [WordTooLong] exception with the given error [message].
-  WordTooLong(this.message);
 
   @override
   String toString() => message;
@@ -638,15 +619,4 @@ class RouterOSTrapError implements Exception {
 
   @override
   String toString() => message;
-}
-
-/// Extension method to convert an integer to a list of bytes.
-extension on int {
-  List<int> toBytes(int byteCount) {
-    var result = <int>[];
-    for (var i = 0; i < byteCount; i++) {
-      result.add((this >> (8 * (byteCount - i - 1))) & 0xFF);
-    }
-    return result;
-  }
 }

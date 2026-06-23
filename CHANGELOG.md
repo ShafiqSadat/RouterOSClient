@@ -169,3 +169,21 @@ Date: June 28, 2025
 - Automatic tag generation when not specified
 - Proper cleanup of completed tagged commands
 - Thread-safe concurrent command management
+## [2.0.1]
+
+### Fixed
+- **TCP fragmentation framing**: incoming replies are now reassembled with a buffered parser (`SentenceBuffer`) that only consumes bytes once a whole sentence has arrived. Previously a word whose length prefix arrived before its body could corrupt the stream on large replies or slow networks.
+- **Data loss on values containing `=`**: attribute values are now split on the first `=` only, so values such as base64 keys, comments, and URLs are preserved instead of being silently dropped.
+- **Tag collisions**: tags are now generated from a monotonic counter instead of a millisecond timestamp, preventing collisions (and lost replies) when many commands are issued in the same millisecond.
+- **Reconnection after `close()`**: the broadcast stream controller is recreated on reconnect, so calling `login()` again after `close()` no longer throws.
+- **`isAlive()`**: now returns `Future<bool>` and is properly awaited, so timeouts and errors are actually reported.
+- **Concurrent untagged commands**: overlapping `talk()` calls without tags are tracked in a FIFO queue and no longer overwrite each other's pending state.
+- **Timeouts**: the `timeout` option is now applied to connecting and to awaiting command replies.
+
+### Changed
+- Extracted the pure wire-protocol logic into `lib/src/protocol.dart` and added a unit + integration test suite (run against a loopback fake-RouterOS server).
+- Word lengths are computed from UTF-8 byte length rather than character count.
+- Tagged replies are accumulated across sentences and completed only on `!done`, so a `!trap`+`!done` pair can no longer leak its trailing `!done` onto the next command.
+
+### Removed
+- Dead/unreachable code (`_parseSentence` and the duplicated length-encoding helpers).

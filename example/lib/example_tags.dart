@@ -1,5 +1,7 @@
-import 'package:router_os_client/router_os_client.dart';
+// Example file: printing to stdout is the intended output here.
+// ignore_for_file: avoid_print
 
+import 'package:router_os_client/router_os_client.dart';
 
 /// Example demonstrating the new tag functionality in RouterOSClient
 void main() async {
@@ -72,7 +74,7 @@ void main() async {
     var streamFuture = _monitorInterfaces(client, streamTag);
 
     // Simulate some activity (wait 5 seconds then cancel)
-    await Future.delayed(Duration(seconds: 5));
+    await Future.delayed(const Duration(seconds: 5));
 
     print('Cancelling interface monitor...');
     await client.cancelTagged(streamTag);
@@ -83,6 +85,14 @@ void main() async {
     // Example 5: Batch operations with different parameters
     print('\n=== Example 5: Batch Operations ===');
     await _performBatchOperations(client);
+
+    // Example 6: Error handling with tags
+    print('\n=== Example 6: Error Handling ===');
+    await _demonstrateErrorHandling(client);
+
+    // Example 7: Using tags together with parameters
+    print('\n=== Example 7: Tags With Parameters ===');
+    await _demonstrateParametersWithTags(client);
 
   } catch (e) {
     print('Error: $e');
